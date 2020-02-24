@@ -159,6 +159,9 @@ fm$total_goods <- rowSums(sapply(fm[,c(30:58)], as.numeric))
 
 fm <- full_join(fm, state_area, by='State')
 
+fm$total_payment <- rowSums(sapply(fm[,c(24:28)], as.numeric))
+fm$total_media <- rowSums(sapply(fm[,c(3:7)], as.numeric))
+
 #Name = 2
 #Media = 3:7
 #Location = 11:12, 21:22, 75:78
@@ -169,7 +172,8 @@ fm <- full_join(fm, state_area, by='State')
 
 
 ```{r}
-fm_graph <- fm[,c(77,79,78)]
+fm_graph <- fm[,c(77,79,78,60)]
+fm_graph <- filter(fm_graph, total_goods!=0)
 
 fm_graph <- drop_na(fm_graph)
 
@@ -203,13 +207,15 @@ fm_graph$fm_per_pop <- fm_graph$count / fm_graph$population * 100000
 
 plot_usmap(data = fm_graph, values = "fm_per_pop") + 
   labs(title = "Farmers Markets per 100k State Population") +
-  scale_fill_continuous(low = "white", high = "darkgreen", name = "#FM per 100k People") +
+  scale_fill_continuous(low = "white", high = "darkgreen", name = "#FM per 100k People", 
+                        limits = c(0,20), breaks = c(0, 5, 10, 15, 20)) +
   theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom")
 ggsave("images/fm_per_state_pop.png", dpi=500)
 
 plot_usmap(data = fm_graph, values = "fm_per_sqmi") + 
-  labs(title = "Farmers Markets per Thousand sqmi per State") +
-  scale_fill_continuous(low = "white", high = "darkgreen", name = "FM per 1000 sqmi") +
+  labs(title = "Farmers Markets per 1k sqmi per State") +
+  scale_fill_continuous(low = "white", high = "darkgreen", name = "FM per 1000 sqmi", 
+                        limits = c(0,50), breaks = c(0, 10, 20, 30, 40, 50)) +
   theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom")
 ggsave("images/fm_per_sqmi.png", dpi=500)
 
@@ -275,6 +281,24 @@ ggsave("images/update_year_per_region.png", dpi=500)
 
 
 ```{r}
+#total active months
+fm_graph <- fm[,c(75,77)]
+fm_graph <- fm_graph %>%
+  group_by(total_months, Region) %>%
+  drop_na() %>%
+  summarise(count=n())
+
+fm_graph$total_months <- factor(fm_graph$total_months, levels = 
+                                   c('1', '2', '3',  '4', '5','6',
+                                     '7','8', '9', '10', '11', '12'))
+
+ggplot(fm_graph, aes(x=total_months, y=count, fill=Region)) + 
+  geom_bar(stat = "identity") +
+  ggtitle("Total Active Months of Farmers Markets per Region") +
+  xlab("Total Active Months") + 
+  ylab("Count")
+
+#Active months split by month
 fm_graph <- fm[,c(63:74, 77)]
 fm_graph <- gather(fm_graph, key='months', value=measurement, -Region)
 
@@ -290,69 +314,67 @@ fm_graph$months <- factor(fm_graph$months, levels =
                                "Sep", "Oct", "Nov", "Dec"))
 
 ggplot(fm_graph, aes(x=months, y=count, fill=Region)) + 
-  geom_bar(position = "fill", stat = "identity")
-
-ggplot(fm_graph, aes(x=months, y=count, fill=Region)) + 
   geom_bar(stat = "identity") + 
   ggtitle("Active Months of Farmers Markets per Region") +
   xlab("Active Months") + 
   ylab("Count")
 ggsave("images/active_months_per_region.png", dpi=500)
 ```
-```{r}
-fm_graph <- fm[,c(75,77)]
-fm_graph <- fm_graph %>%
-  group_by(total_months, Region) %>%
-  drop_na() %>%
-  summarise(count=n())
-
-fm_graph$total_months <- factor(fm_graph$total_months, levels = 
-                                   c('1', '2', '3',  '4', '5','6',
-                                     '7','8', '9', '10', '11', '12'))
-
-ggplot(fm_graph, aes(x=total_months, y=count, fill=Region)) + 
-  geom_bar(position = "fill", stat = "identity")
-
-ggplot(fm_graph, aes(x=total_months, y=count, fill=Region)) + 
-  geom_bar(stat = "identity") +
-  ggtitle("Total Active Months of Farmers Markets per Region") +
-  xlab("Total Active Months") + 
-  ylab("Count")
-ggsave("images/active_months_total_per_region.png", dpi=500)
-```
 
 
 ```{r}
-fm_graph <- fm[,c(24:28,77)]
-fm_graph <- gather(fm_graph, key='payment', value=measurement, -Region)
+fm_media <- fm[,c(3:7, 60)]
+fm_media <- gather(fm_media, key='media', value=measurement, -year_update)
 
-fm_graph <- fm_graph %>%
+fm_yes_media <- fm_media %>%
   filter(measurement==1) %>%
-  group_by(payment, Region) %>%
+  group_by(media, year_update) %>%
   drop_na() %>%
-  summarise(count=n())
+  summarise(Yes=n())
 
-ggplot(fm_graph, aes(x=payment, y=count, fill=Region)) + 
-  geom_bar(position = "fill", stat = "identity")
+ggplot(fm_yes_media, aes(x=media, y=Yes, fill=media)) + 
+  geom_bar(stat = "identity") +
+  ggtitle("Count of Farmers Makets Usage of Media Platforms") +
+  xlab("Media Platforms") + 
+  ylab("Count")
+ggsave("images/media_count.png", dpi=500)
 
-ggplot(fm_graph, aes(x=payment, y=count, fill=Region)) + 
-  geom_bar(stat = "identity")
+fm_no_media <- fm_media %>%
+  filter(measurement==0) %>%
+  group_by(media, year_update) %>%
+  drop_na() %>%
+  summarise(No=n())
+
+media_join <- merge(fm_yes_media, fm_no_media, by=c("media","year_update"), all = TRUE)
+media_join[is.na(media_join)] <- 0
+media_join$Percent_Yes <- media_join$Yes / (media_join$Yes + media_join$No)
+media_no2020 <- filter(media_join, year_update!=2020)
+#pay_no2020 <- filter(pay_no2020, year_update>2010)
+
+
+ggplot(media_no2020, aes(x=year_update, y=Percent_Yes, group=media)) +
+  geom_line(aes(color=media))+
+  geom_point(aes(color=media)) +
+  ggtitle("Percent of Famers Markets Using Media Platforms Through Years") +
+  xlab("Year Updated") + 
+  ylab("Percent Using Media Platform")
+ggsave("images/media_percent_year.png", dpi=500)
 ```
 
 
 ```{r}
 fm_just_payment <- fm[,c(24:28,60)]
-fm_no_pay <- gather(fm_just_payment, key='payment', value=measurement, -year_update)
 
 #Sum if payment = 0
+fm_no_pay <- gather(fm_just_payment, key='payment', value=measurement, -year_update)
+
 fm_no_pay <- fm_no_pay %>%
   filter(measurement!=1) %>%
   group_by(payment, year_update) %>%
   drop_na() %>%
   summarise(No=n())
 
-ggplot(fm_no_pay, aes(x=payment, y=No, fill=year_update)) + 
-  geom_bar(stat = "identity")
+#ggplot(fm_no_pay, aes(x=payment, y=No, fill=year_update)) + geom_bar(stat = "identity")
 
 #Sum if payment = 1
 fm_pay <- gather(fm_just_payment, key='payment', value=measurement, -year_update)
@@ -363,22 +385,28 @@ fm_pay <- fm_pay %>%
   drop_na() %>%
   summarise(Yes=n())
 
-ggplot(fm_pay, aes(x=payment, y=Yes, fill=year_update)) + 
-  geom_bar(stat = "identity")
+ggplot(fm_pay, aes(x=payment, y=Yes, fill=payment)) + 
+  geom_bar(stat = "identity") +
+  ggtitle("Count of Farmers Makets Accepting Payment Types") +
+  xlab("Payment Types") + 
+  ylab("Count")
+ggsave("images/payment_count.png", dpi=500)
+
+#ggplot(fm_pay, aes(x=payment, y=Yes, fill=year_update)) + geom_bar(stat = "identity")
 
 #compare payment count vs no payment
 pay_join <- merge(fm_pay, fm_no_pay, by=c("payment","year_update"), all = TRUE)
 pay_join[is.na(pay_join)] <- 0
 pay_join$Percent_Yes <- pay_join$Yes / (pay_join$Yes + pay_join$No)
 pay_no2020 <- filter(pay_join, year_update!=2020)
-pay_no2020 <- filter(pay_no2020, year_update>2011)
+pay_no2020 <- filter(pay_no2020, year_update>2010)
   
 ggplot(data=pay_no2020, aes(x=year_update, y=Percent_Yes, group=payment)) +
   geom_line(aes(color=payment))+
   geom_point(aes(color=payment)) +
   ggtitle("Percent of Famers Markets Accepting Payment Through Years") +
   xlab("Year Updated") + 
-  ylab("Percent of Famers Markets Accepting Payment")
+  ylab("Percent Accepting Payment")
 ggsave("images/payment_vs_years.png", dpi=500)
 
 ```
