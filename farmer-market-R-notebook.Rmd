@@ -1,0 +1,387 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(reshape2)
+library(stringr)
+library(treemapify)
+library(usmap)
+```
+
+
+```{r}
+fm <- read_csv("data/fmarket.csv")
+state_region <- read_csv("data/state_region.csv")
+state_area <- read_csv("data/state_area.csv")
+
+#UPDATE_YEAR
+fm$year_update <- str_match(fm$updateTime, "20\\d{2}")
+
+#SEASON
+col_list = list("start_month", "end_month",
+                '1', '2', '3', 
+                '4', '5','6', '7',
+                '8', '9', '10',
+                '11', '12', 'total_months')
+month_num = list('1', '2', '3', 
+                '4', '5','6', '7',
+                '8', '9', '10',
+                '11', '12')
+for (col in col_list) {
+  fm[,col] <- NA
+}
+
+for (row in 1:nrow(fm)) {
+  season <- fm[row, "Season1Date"]
+  season <- tolower(season)
+  season_check_space <- gsub(" ", "", season, fixed = TRUE)
+  
+  if (is.na(season)){
+  }
+  else if (nchar(season) == 24) {
+    fm[row, "start_month"] <- as.integer(substr(season, 1, 2))
+    fm[row, "end_month"] <- as.integer(substr(season, 15, 16))
+  }
+  else if (grepl("^[A-Za-z]+$", season_check_space, perl = T) == TRUE){
+    
+    month_list = list('january'=1, 'february'=2, 'march'=3, 
+                      'april'=4, 'may'=5,'june'=6, 'july'=7, 
+                      'august'=8, 'september'=9, 'october'=10, 'octobsr' = 10,
+                      'november'=11, 'december'=12)
+
+    start_month_char <- gsub(" to .*$", "", season)
+    start_month <- month_list[[start_month_char]]
+    fm[row, "start_month"] <- as.integer(start_month)
+    
+    end_month_char <- gsub(".*to ", "", season)
+    end_month <- month_list[[end_month_char]]
+    fm[row, "end_month"] <- as.integer(end_month)
+  }
+  else {
+  }
+}
+
+for (row in 1:nrow(fm)) {
+  start_month <- as.integer(fm[row, "start_month"])
+  end_month <- as.integer(fm[row, "end_month"])
+  if (is.na(start_month)) {
+  }
+  else if (start_month < end_month) {
+    fm[row, "total_months"] <- as.character(end_month - start_month + 1)
+    active_months = list()
+    for (n in start_month:end_month) {
+      active_months = append(active_months, n)
+    }
+    for (month in month_num) {
+      if (month %in% active_months){
+        fm[row, month] <- 1
+      }
+      else{
+        fm[row, month] <- 0
+      }
+    }
+  }
+  else if (end_month < start_month) {
+    fm[row, "total_months"] <- as.character(12 - start_month + end_month + 1)
+    active_months = list()
+    for (n in start_month:12) {
+      active_months = append(active_months, n)
+    }
+    for (n in 1:end_month) {
+      active_months = append(active_months, n)
+    }
+    for (month in month_num) {
+      if (month %in% active_months){
+        fm[row, month] <- 1
+      }
+      else{
+        fm[row, month] <- 0
+      }
+    }
+  }
+  else if (end_month == start_month) {
+    fm[row, "total_months"] <- as.character(1)
+    for (month in month_num) {
+      if (month == start_month){
+        fm[row, month] <- 1
+      }
+      else {
+        fm[row, month] <- 0
+      }
+    }
+  }
+  else {
+  }
+}
+
+fm <- rename(fm ,
+    "Jan"='1', "Feb"='2', "Mar"='3',
+    "Apr"='4', "May"='5', "Jun"='6',
+    "Jul"='7', "Aug"='8', "Sep"='9',
+    "Oct"='10', "Nov"='11', "Dec"='12'
+    )
+
+#MEDIA
+media_list = list('Website', 'Facebook', 'Twitter', 'Youtube', 'OtherMedia')
+for (media in media_list) {
+  fm[[media]][is.na(fm[[media]])] <- 0
+  fm[[media]][fm[[media]] != 0] <- 1
+}
+
+#GOODS
+goods_list = list()
+for (n in 1:30) {
+  goods_col <- colnames(fm[,c(29:58)][n])
+  goods_list <- append(goods_list, goods_col)
+}
+for (goods in goods_list) {
+  fm[[goods]][fm[[goods]] == 'Y'] <- 1
+  fm[[goods]][fm[[goods]] == 'N'] <- 0
+}
+
+
+#PAYMENT
+pay_list = list('Credit', 'WIC', 'WICcash', 'SFMNP', 'SNAP')
+for (pay in pay_list) {
+  fm[[pay]][fm[[pay]] == 'Y'] <- 1
+  fm[[pay]][fm[[pay]] == 'N'] <- 0
+}
+
+fm <- full_join(fm, state_region, by='State')
+
+fm$total_goods <- rowSums(sapply(fm[,c(30:58)], as.numeric))
+
+fm <- full_join(fm, state_area, by='State')
+
+#Name = 2
+#Media = 3:7
+#Location = 11:12, 21:22, 75:78
+#Payment = 24:28
+#Goods = 29:58
+#Dates = 60:74
+```
+
+
+```{r}
+fm_graph <- fm[,c(77,79,78)]
+
+fm_graph <- drop_na(fm_graph)
+
+ggplot(data=fm_graph, aes(x=total_goods, fill=Region)) + 
+  geom_density(alpha=0.30) +
+  ggtitle("Total Goods of Famers Market per Region") +
+  xlab("Total Type of Goods") + 
+  ylab("")
+ggsave("images/goods_total_density.png", dpi=500)
+
+ggplot(fm_graph, aes(Region, fill=Division)) + 
+  geom_bar() +
+  ggtitle("Famers Markets per Region and Division") +
+  xlab("Region") + 
+  ylab("Count")
+ggsave("images/region_division.png", dpi=500)
+  
+```
+```{r}
+fm_graph <- fm[,c(76, 80, 81)]
+
+fm_graph <- fm_graph %>%
+  group_by(`State Code`, `land_area_sqmi`, `population`) %>%
+  filter(`State Code` != "DC") %>%
+  drop_na() %>%
+  summarise(count=n())
+  
+fm_graph <- rename(fm_graph, "state"='State Code')
+fm_graph$fm_per_sqmi <- fm_graph$count / fm_graph$land_area_sqmi * 1000
+fm_graph$fm_per_pop <- fm_graph$count / fm_graph$population * 100000
+
+plot_usmap(data = fm_graph, values = "fm_per_pop") + 
+  labs(title = "Farmers Markets per 100k State Population") +
+  scale_fill_continuous(low = "white", high = "darkgreen", name = "#FM per 100k People") +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom")
+ggsave("images/fm_per_state_pop.png", dpi=500)
+
+plot_usmap(data = fm_graph, values = "fm_per_sqmi") + 
+  labs(title = "Farmers Markets per Thousand sqmi per State") +
+  scale_fill_continuous(low = "white", high = "darkgreen", name = "FM per 1000 sqmi") +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom")
+ggsave("images/fm_per_sqmi.png", dpi=500)
+
+plot_usmap(data = fm_graph, values = "count") + 
+  labs(title = "Farmers Markets per State") +
+  scale_fill_continuous(low = "white", high = "darkgreen", name = "FM Count") +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom")
+ggsave("images/fm_per_state.png", dpi=500)
+```
+
+
+```{r}
+fm_food <- fm[,c(29:58, 77)]
+fm_food <- gather(fm_food, key='goods', value=measurement, -Region)
+
+fm_yes_food <- fm_food %>%
+  filter(measurement==1) %>%
+  group_by(goods, Region) %>%
+  drop_na() %>%
+  summarise(Yes=n())
+
+fm_no_food <- fm_food %>%
+  filter(measurement==0) %>%
+  group_by(goods, Region) %>%
+  drop_na() %>%
+  summarise(No=n())
+
+food_join <- merge(fm_yes_food, fm_no_food, by=c("goods","Region"), all = TRUE)
+food_join[is.na(food_join)] <- 0
+food_join$Percent_Yes <- food_join$Yes / (food_join$Yes + food_join$No)
+food_join <- filter(food_join, Percent_Yes > 0.5)
+
+ggplot(food_join, aes(area = Percent_Yes, fill=Yes , label=goods, subgroup=Region)) +
+  geom_treemap() +
+  geom_treemap_text() +
+  geom_treemap_subgroup_border() +
+  geom_treemap_subgroup_text(place = "centre", alpha = .25, colour="black", fontface = "italic", min.size = 0)
+  
+```
+
+
+```{r}
+fm_graph <- fm[,c(60, 77)]
+
+fm_graph <- fm_graph %>%
+  group_by(year_update, Region) %>%
+  drop_na() %>%
+  summarise(count=n())
+
+ggplot(fm_graph, aes(x=year_update, y=count, fill=Region)) + 
+  geom_bar(position = "fill", stat = "identity") +
+  ggtitle("Year Updated Split by Region") +
+  xlab("Year Updated") + 
+  ylab("Percent Region")
+
+ggplot(fm_graph, aes(x=year_update, y=count, fill=Region)) + 
+  geom_bar(stat = "identity") +
+  ggtitle("Update Year of Farmers Market Entries per Region") +
+  xlab("Year Updated") + 
+  ylab("Count")
+ggsave("images/update_year_per_region.png", dpi=500)
+```
+
+
+```{r}
+fm_graph <- fm[,c(63:74, 77)]
+fm_graph <- gather(fm_graph, key='months', value=measurement, -Region)
+
+fm_graph <- fm_graph %>%
+  filter(measurement==1) %>%
+  group_by(months, Region) %>%
+  drop_na() %>%
+  summarise(count=n())
+
+fm_graph$months <- factor(fm_graph$months, levels = 
+                             c("Jan", "Feb", "Mar", "Apr", 
+                               "May", "Jun", "Jul", "Aug", 
+                               "Sep", "Oct", "Nov", "Dec"))
+
+ggplot(fm_graph, aes(x=months, y=count, fill=Region)) + 
+  geom_bar(position = "fill", stat = "identity")
+
+ggplot(fm_graph, aes(x=months, y=count, fill=Region)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Active Months of Farmers Markets per Region") +
+  xlab("Active Months") + 
+  ylab("Count")
+ggsave("images/active_months_per_region.png", dpi=500)
+```
+```{r}
+fm_graph <- fm[,c(75,77)]
+fm_graph <- fm_graph %>%
+  group_by(total_months, Region) %>%
+  drop_na() %>%
+  summarise(count=n())
+
+fm_graph$total_months <- factor(fm_graph$total_months, levels = 
+                                   c('1', '2', '3',  '4', '5','6',
+                                     '7','8', '9', '10', '11', '12'))
+
+ggplot(fm_graph, aes(x=total_months, y=count, fill=Region)) + 
+  geom_bar(position = "fill", stat = "identity")
+
+ggplot(fm_graph, aes(x=total_months, y=count, fill=Region)) + 
+  geom_bar(stat = "identity") +
+  ggtitle("Total Active Months of Farmers Markets per Region") +
+  xlab("Total Active Months") + 
+  ylab("Count")
+ggsave("images/active_months_total_per_region.png", dpi=500)
+```
+
+
+```{r}
+fm_graph <- fm[,c(24:28,77)]
+fm_graph <- gather(fm_graph, key='payment', value=measurement, -Region)
+
+fm_graph <- fm_graph %>%
+  filter(measurement==1) %>%
+  group_by(payment, Region) %>%
+  drop_na() %>%
+  summarise(count=n())
+
+ggplot(fm_graph, aes(x=payment, y=count, fill=Region)) + 
+  geom_bar(position = "fill", stat = "identity")
+
+ggplot(fm_graph, aes(x=payment, y=count, fill=Region)) + 
+  geom_bar(stat = "identity")
+```
+
+
+```{r}
+fm_just_payment <- fm[,c(24:28,60)]
+fm_no_pay <- gather(fm_just_payment, key='payment', value=measurement, -year_update)
+
+#Sum if payment = 0
+fm_no_pay <- fm_no_pay %>%
+  filter(measurement!=1) %>%
+  group_by(payment, year_update) %>%
+  drop_na() %>%
+  summarise(No=n())
+
+ggplot(fm_no_pay, aes(x=payment, y=No, fill=year_update)) + 
+  geom_bar(stat = "identity")
+
+#Sum if payment = 1
+fm_pay <- gather(fm_just_payment, key='payment', value=measurement, -year_update)
+
+fm_pay <- fm_pay %>%
+  filter(measurement!=0) %>%
+  group_by(payment, year_update) %>%
+  drop_na() %>%
+  summarise(Yes=n())
+
+ggplot(fm_pay, aes(x=payment, y=Yes, fill=year_update)) + 
+  geom_bar(stat = "identity")
+
+#compare payment count vs no payment
+pay_join <- merge(fm_pay, fm_no_pay, by=c("payment","year_update"), all = TRUE)
+pay_join[is.na(pay_join)] <- 0
+pay_join$Percent_Yes <- pay_join$Yes / (pay_join$Yes + pay_join$No)
+pay_no2020 <- filter(pay_join, year_update!=2020)
+pay_no2020 <- filter(pay_no2020, year_update>2011)
+  
+ggplot(data=pay_no2020, aes(x=year_update, y=Percent_Yes, group=payment)) +
+  geom_line(aes(color=payment))+
+  geom_point(aes(color=payment)) +
+  ggtitle("Percent of Famers Markets Accepting Payment Through Years") +
+  xlab("Year Updated") + 
+  ylab("Percent of Famers Markets Accepting Payment")
+ggsave("images/payment_vs_years.png", dpi=500)
+
+```
+
+
+
