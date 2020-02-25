@@ -12,6 +12,8 @@ library(reshape2)
 library(stringr)
 library(treemapify)
 library(usmap)
+library(RColorBrewer)
+library(ggsci)
 ```
 
 
@@ -120,12 +122,10 @@ for (row in 1:nrow(fm)) {
   }
 }
 
-fm <- rename(fm ,
-    "Jan"='1', "Feb"='2', "Mar"='3',
-    "Apr"='4', "May"='5', "Jun"='6',
-    "Jul"='7', "Aug"='8', "Sep"='9',
-    "Oct"='10', "Nov"='11', "Dec"='12'
-    )
+fm <- rename(fm , "Jan"='1', "Feb"='2', "Mar"='3',
+             "Apr"='4', "May"='5', "Jun"='6',
+             "Jul"='7', "Aug"='8', "Sep"='9',
+             "Oct"='10', "Nov"='11', "Dec"='12')
 
 #MEDIA
 media_list = list('Website', 'Facebook', 'Twitter', 'Youtube', 'OtherMedia')
@@ -179,15 +179,16 @@ fm_graph <- drop_na(fm_graph)
 
 ggplot(data=fm_graph, aes(x=total_goods, fill=Region)) + 
   geom_density(alpha=0.30) +
-  ggtitle("Total Goods of Famers Market per Region") +
-  xlab("Total Type of Goods") + 
+  scale_fill_aaas() +
+  ggtitle("Total Types of Goods of Farmers Markets by Region") +
+  xlab("Total Types of Goods") + 
   ylab("")
 ggsave("images/goods_total_density.png", dpi=500)
 
 ggplot(fm_graph, aes(Region, fill=Division)) + 
   geom_bar() +
-  ggtitle("Famers Markets per Region and Division") +
-  xlab("Region") + 
+  ggtitle("Farmers Markets by Region and Division") +
+  xlab("Region") +
   ylab("Count")
 ggsave("images/region_division.png", dpi=500)
   
@@ -207,28 +208,29 @@ fm_graph$fm_per_pop <- fm_graph$count / fm_graph$population * 100000
 
 plot_usmap(data = fm_graph, values = "fm_per_pop") + 
   labs(title = "Farmers Markets per 100k State Population") +
-  scale_fill_continuous(low = "white", high = "darkgreen", name = "#FM per 100k People", 
+  scale_fill_continuous(low = "white", high = "darkgreen", name = "Count per 100k People", 
                         limits = c(0,20), breaks = c(0, 5, 10, 15, 20)) +
   theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom")
 ggsave("images/fm_per_state_pop.png", dpi=500)
 
 plot_usmap(data = fm_graph, values = "fm_per_sqmi") + 
   labs(title = "Farmers Markets per 1k sqmi per State") +
-  scale_fill_continuous(low = "white", high = "darkgreen", name = "FM per 1000 sqmi", 
+  scale_fill_continuous(low = "white", high = "darkgreen", name = "Count per 1000 sqmi",
                         limits = c(0,50), breaks = c(0, 10, 20, 30, 40, 50)) +
   theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom")
 ggsave("images/fm_per_sqmi.png", dpi=500)
 
 plot_usmap(data = fm_graph, values = "count") + 
   labs(title = "Farmers Markets per State") +
-  scale_fill_continuous(low = "white", high = "darkgreen", name = "FM Count") +
+  scale_fill_continuous(low = "white", high = "darkgreen", name = "Count",
+        limits = c(0,900), breaks = c(0, 200, 400, 600, 800)) +
   theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom")
 ggsave("images/fm_per_state.png", dpi=500)
 ```
 
 
 ```{r}
-fm_food <- fm[,c(29:58, 77)]
+fm_food <- fm[,c(30:58, 77)]
 fm_food <- gather(fm_food, key='goods', value=measurement, -Region)
 
 fm_yes_food <- fm_food %>%
@@ -246,18 +248,41 @@ fm_no_food <- fm_food %>%
 food_join <- merge(fm_yes_food, fm_no_food, by=c("goods","Region"), all = TRUE)
 food_join[is.na(food_join)] <- 0
 food_join$Percent_Yes <- food_join$Yes / (food_join$Yes + food_join$No)
-food_join <- filter(food_join, Percent_Yes > 0.5)
+food_join$Percent_No <- 1-food_join$Percent_Yes
 
-ggplot(food_join, aes(area = Percent_Yes, fill=Yes , label=goods, subgroup=Region)) +
-  geom_treemap() +
-  geom_treemap_text() +
-  geom_treemap_subgroup_border() +
-  geom_treemap_subgroup_text(place = "centre", alpha = .25, colour="black", fontface = "italic", min.size = 0)
+Rank <- function(x) rank(x, ties.method = "first")
+food_join <- transform(food_join, rank = ave(Percent_No, Region, FUN = Rank))
+food_join <- filter(food_join, rank<=10)
+#food_join <- filter(food_join, Percent_Yes > 0.5)
+
+ggplot(food_join, aes(area = Percent_Yes, 
+                      fill=Region, 
+                      label=goods, 
+                      subgroup=Region)) +
+  scale_fill_aaas() +
+  ggtitle("Top 10 Majority Goods Available at Farmers Markets by Region") +
+  geom_treemap(aes(alpha = Yes)) +
+  geom_treemap_subgroup_border(colour="white") +
+  geom_treemap_text(place = "topright", 
+                    alpha = .9, 
+                    colour = "grey95",
+                    size = 10,
+                    fontface="bold") +
+  geom_treemap_subgroup_text(place = "bottomleft", 
+                             alpha = .4, 
+                             colour="grey90", 
+                             fontface = "bold",
+                             size = 30) +
+  scale_alpha(name = "Count", limits = c(750,1750))
+
+ggsave("images/total_goods_tree.png", dpi=500)
   
 ```
 
 
+
 ```{r}
+#update years split by region
 fm_graph <- fm[,c(60, 77)]
 
 fm_graph <- fm_graph %>%
@@ -267,20 +292,18 @@ fm_graph <- fm_graph %>%
 
 ggplot(fm_graph, aes(x=year_update, y=count, fill=Region)) + 
   geom_bar(position = "fill", stat = "identity") +
+  scale_fill_aaas() +
   ggtitle("Year Updated Split by Region") +
   xlab("Year Updated") + 
   ylab("Percent Region")
 
 ggplot(fm_graph, aes(x=year_update, y=count, fill=Region)) + 
   geom_bar(stat = "identity") +
-  ggtitle("Update Year of Farmers Market Entries per Region") +
+  scale_fill_aaas() +
+  ggtitle("Update Year of Farmers Markets Entries by Region") +
   xlab("Year Updated") + 
   ylab("Count")
-ggsave("images/update_year_per_region.png", dpi=500)
-```
 
-
-```{r}
 #total active months
 fm_graph <- fm[,c(75,77)]
 fm_graph <- fm_graph %>%
@@ -294,7 +317,8 @@ fm_graph$total_months <- factor(fm_graph$total_months, levels =
 
 ggplot(fm_graph, aes(x=total_months, y=count, fill=Region)) + 
   geom_bar(stat = "identity") +
-  ggtitle("Total Active Months of Farmers Markets per Region") +
+  scale_fill_aaas() +
+  ggtitle("Total Active Months of Farmers Markets by Region") +
   xlab("Total Active Months") + 
   ylab("Count")
 
@@ -315,8 +339,9 @@ fm_graph$months <- factor(fm_graph$months, levels =
 
 ggplot(fm_graph, aes(x=months, y=count, fill=Region)) + 
   geom_bar(stat = "identity") + 
-  ggtitle("Active Months of Farmers Markets per Region") +
-  xlab("Active Months") + 
+  scale_fill_aaas() +
+  ggtitle("Active Months of Farmers Markets by Region") +
+  xlab("Active Months") +
   ylab("Count")
 ggsave("images/active_months_per_region.png", dpi=500)
 ```
@@ -332,9 +357,17 @@ fm_yes_media <- fm_media %>%
   drop_na() %>%
   summarise(Yes=n())
 
-ggplot(fm_yes_media, aes(x=media, y=Yes, fill=media)) + 
+fm_ct_media <- fm_yes_media
+
+fm_ct_media$media <- factor(fm_ct_media$media, levels = 
+                             c("Website", "Facebook", "Twitter",
+                               "OtherMedia", "Youtube"))
+
+ggplot(fm_ct_media, aes(x=media, y=Yes, fill=media)) + 
   geom_bar(stat = "identity") +
-  ggtitle("Count of Farmers Makets Usage of Media Platforms") +
+  scale_fill_manual(values=c("#55C53B", "#3b5998", "#00aced",
+                            "#D6CE3D", "#bb0000"), name = "Media") + 
+  ggtitle("Farmers Markets Media Platform Usage") +
   xlab("Media Platforms") + 
   ylab("Count")
 ggsave("images/media_count.png", dpi=500)
@@ -349,13 +382,18 @@ media_join <- merge(fm_yes_media, fm_no_media, by=c("media","year_update"), all 
 media_join[is.na(media_join)] <- 0
 media_join$Percent_Yes <- media_join$Yes / (media_join$Yes + media_join$No)
 media_no2020 <- filter(media_join, year_update!=2020)
-#pay_no2020 <- filter(pay_no2020, year_update>2010)
+
+media_no2020$media <- factor(media_no2020$media, levels = 
+                             c("Website", "Facebook", "Twitter",
+                               "OtherMedia", "Youtube"))
 
 
 ggplot(media_no2020, aes(x=year_update, y=Percent_Yes, group=media)) +
-  geom_line(aes(color=media))+
-  geom_point(aes(color=media)) +
-  ggtitle("Percent of Famers Markets Using Media Platforms Through Years") +
+  geom_line(aes(color=media), size=1)+
+  geom_point(aes(color=media), size=2) +
+  scale_color_manual(values=c("#55C53B", "#3b5998", "#00aced",
+                              "#D6CE3D", "#bb0000"), name = "Media") + 
+  ggtitle("Farmers Markets Media Platform Usage (2009-2019)") +
   xlab("Year Updated") + 
   ylab("Percent Using Media Platform")
 ggsave("images/media_percent_year.png", dpi=500)
@@ -363,6 +401,25 @@ ggsave("images/media_percent_year.png", dpi=500)
 
 
 ```{r}
+fm_pay_region <- fm[,c(24:28,77)]
+fm_pay_region <- gather(fm_pay_region, key='payment', value=measurement, -Region)
+
+fm_pay_region <- fm_pay_region %>%
+  filter(measurement==1) %>%
+  group_by(payment, Region) %>%
+  drop_na() %>%
+  summarise(count=n())
+
+ggplot(fm_pay_region, aes(x=payment, y=count, fill=Region)) + 
+  geom_bar(position = "fill", stat = "identity") +
+  scale_fill_aaas() +
+  ggtitle("Payment Types by Region") +
+  xlab("Payment Types") + 
+  ylab("Percent Region")
+ggsave("images/payment_percent.png", dpi=500)
+
+
+
 fm_just_payment <- fm[,c(24:28,60)]
 
 #Sum if payment = 0
@@ -384,10 +441,16 @@ fm_pay <- fm_pay %>%
   group_by(payment, year_update) %>%
   drop_na() %>%
   summarise(Yes=n())
+fm_ct_pay <- fm_pay
 
-ggplot(fm_pay, aes(x=payment, y=Yes, fill=payment)) + 
+fm_ct_pay$payment <- factor(fm_ct_pay$payment, levels =
+                              c('Credit', 'SNAP', 'SFMNP', 'WIC', 'WICcash'))
+
+
+ggplot(fm_ct_pay, aes(x=payment, y=Yes, fill=payment)) + 
   geom_bar(stat = "identity") +
-  ggtitle("Count of Farmers Makets Accepting Payment Types") +
+  scale_fill_nejm(name = "Payment") +
+  ggtitle("Farmers Markets Payment Types Acceptance") +
   xlab("Payment Types") + 
   ylab("Count")
 ggsave("images/payment_count.png", dpi=500)
@@ -400,15 +463,19 @@ pay_join[is.na(pay_join)] <- 0
 pay_join$Percent_Yes <- pay_join$Yes / (pay_join$Yes + pay_join$No)
 pay_no2020 <- filter(pay_join, year_update!=2020)
 pay_no2020 <- filter(pay_no2020, year_update>2010)
+
+pay_no2020$payment <- factor(pay_no2020$payment, levels =
+                               c('Credit', 'SNAP', 'SFMNP', 'WIC', 'WICcash'))
   
 ggplot(data=pay_no2020, aes(x=year_update, y=Percent_Yes, group=payment)) +
-  geom_line(aes(color=payment))+
-  geom_point(aes(color=payment)) +
-  ggtitle("Percent of Famers Markets Accepting Payment Through Years") +
+  geom_line(aes(color=payment), size=1)+
+  geom_point(aes(color=payment), size=2) +
+  scale_fill_nejm() +
+  scale_color_nejm(name = "Payment") +
+  ggtitle("Farmers Markets Payment Types Acceptance (2011-2019)") +
   xlab("Year Updated") + 
   ylab("Percent Accepting Payment")
 ggsave("images/payment_vs_years.png", dpi=500)
-
 ```
 
 
