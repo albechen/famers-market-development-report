@@ -172,18 +172,24 @@ fm$total_media <- rowSums(sapply(fm[,c(3:7)], as.numeric))
 
 
 ```{r}
-fm_graph <- fm[,c(77,79,78,60)]
-fm_graph <- filter(fm_graph, total_goods!=0)
+fm_tot_goods <- fm[,c(77,79,78,60)]
+fm_tot_goods <- filter(fm_tot_goods, year_update>2011)
 
-fm_graph <- drop_na(fm_graph)
+fm_tot_goods <- drop_na(fm_tot_goods)
 
-ggplot(data=fm_graph, aes(x=total_goods, fill=Region)) + 
+ggplot(data=fm_tot_goods, aes(x=total_goods, fill=Region)) + 
   geom_density(alpha=0.30) +
   scale_fill_aaas() +
-  ggtitle("Total Types of Goods of Farmers Markets by Region") +
-  xlab("Total Types of Goods") + 
-  ylab("")
+  ggtitle("Total Types of Products of Farmers Markets by Region") +
+  xlab("Total Types of Products") + 
+  ylab("Density")
 ggsave("images/goods_total_density.png", dpi=500)
+```
+
+
+```{r}
+fm_graph <- fm[,c(77,79,78,60)]
+fm_graph <- drop_na(fm_graph)
 
 ggplot(fm_graph, aes(Region, fill=Division)) + 
   geom_bar() +
@@ -191,8 +197,8 @@ ggplot(fm_graph, aes(Region, fill=Division)) +
   xlab("Region") +
   ylab("Count")
 ggsave("images/region_division.png", dpi=500)
-  
 ```
+
 ```{r}
 fm_graph <- fm[,c(76, 80, 81)]
 
@@ -233,6 +239,7 @@ ggsave("images/fm_per_state.png", dpi=500)
 fm_food <- fm[,c(30:58, 77)]
 fm_food <- gather(fm_food, key='goods', value=measurement, -Region)
 
+#calculate number yes/no then join
 fm_yes_food <- fm_food %>%
   filter(measurement==1) %>%
   group_by(goods, Region) %>%
@@ -250,17 +257,17 @@ food_join[is.na(food_join)] <- 0
 food_join$Percent_Yes <- food_join$Yes / (food_join$Yes + food_join$No)
 food_join$Percent_No <- 1-food_join$Percent_Yes
 
+#top 10 popular product per region
 Rank <- function(x) rank(x, ties.method = "first")
-food_join <- transform(food_join, rank = ave(Percent_No, Region, FUN = Rank))
-food_join <- filter(food_join, rank<=10)
-#food_join <- filter(food_join, Percent_Yes > 0.5)
+food_top10 <- transform(food_join, rank = ave(Percent_No, Region, FUN = Rank))
+food_top10 <- filter(food_top10, rank<=10)
 
-ggplot(food_join, aes(area = Percent_Yes, 
+ggplot(food_top10, aes(area = Percent_Yes, 
                       fill=Region, 
                       label=goods, 
                       subgroup=Region)) +
   scale_fill_aaas() +
-  ggtitle("Top 10 Majority Goods Available at Farmers Markets by Region") +
+  ggtitle("Top 10 Majority Products Available at Farmers Markets by Region") +
   geom_treemap(aes(alpha = Yes)) +
   geom_treemap_subgroup_border(colour="white") +
   geom_treemap_text(place = "topright", 
@@ -274,8 +281,28 @@ ggplot(food_join, aes(area = Percent_Yes,
                              fontface = "bold",
                              size = 30) +
   scale_alpha(name = "Count", limits = c(750,1750))
-
 ggsave("images/total_goods_tree.png", dpi=500)
+
+#speciality items
+food_dist_check <- food_join %>%
+  group_by(goods) %>%
+  summarise(mean = mean(Percent_Yes)) %>%
+  merge(food_join, by="goods", all=TRUE) %>%
+  filter(abs(Percent_Yes - mean)>0.08) %>%
+  distinct(goods)
+food_dist_v = food_dist_check$goods
+
+food_special <- food_join %>%
+  filter(goods %in% food_dist_v)
+
+ggplot(food_special, aes(fill=Region, y=Percent_Yes, x=goods)) + 
+  geom_bar(position="dodge", stat="identity") +
+  scale_fill_aaas() +
+  ggtitle("Products with Regional Difference in Avalibility") +
+  xlab("Products") +
+  ylab("Percent Avalibility")
+ggsave("images/goods_speciality.png", dpi=500)
+
   
 ```
 
