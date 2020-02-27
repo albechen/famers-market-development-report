@@ -9,7 +9,8 @@ The findings from the analysis were (1) regional product specialty determined th
 
 Overall, with the support of the federal government, and advances in social and community outreach, the farmer market industry is poised to grow.
 
-**Visualization Examples:**
+**Visualization Examples:** <br/>
+
 ![alt text](/images/active_months_per_region.png "active_months_per_region")
 ![alt text](/images/fm_per_state_pop.png "fm_per_state_pop") 
 ![alt text](/images/media_percent_year.png "media_percent_year") 
